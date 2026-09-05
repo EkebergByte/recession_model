@@ -1,0 +1,52 @@
+name: US Recession Monitor & Nowcast
+
+on:
+  schedule:
+    # Odpalanie od poniedziałku do piątku o 16:30 UTC (18:30 czasu polskiego, tuż po publikacjach makro w USA)
+    - cron: '30 16 * * 1-5'
+  workflow_dispatch: # Przycisk "Run workflow" do ręcznego testowania w przeglądarce
+
+permissions:
+  contents: write # Wymagane uprawnienie, by bot mógł zapisać fred_state.json
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pobranie repozytorium
+        uses: actions/checkout@v4
+
+      - name: Konfiguracja Pythona
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Instalacja bibliotek
+        run: |
+          pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; else pip install fredapi pandas scikit-learn joblib requests python-dotenv numpy; fi
+
+      - name: Weryfikacja lub trening modelu
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+        run: |
+          if [ ! -f model_bundle.joblib ]; then
+            echo "Brak pliku model_bundle.joblib - uruchamiam trening..."
+            python train_models.py
+          fi
+
+      - name: Uruchomienie monitora i wysyłka alertu
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python monitor_and_predict.py
+
+      - name: Zapisanie zaktualizowanego stanu (fred_state.json)
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f fred_state.json model_bundle.joblib || true
+          git commit -m "chore: update fred state [skip ci]" || exit 0
+          git push
