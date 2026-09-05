@@ -1,0 +1,8 @@
+dump.txt
+komenda_dump.txt
+project_dump.txt
+.env
+fred_state.json
+model_bundle.joblib
+__pycache__/
+*.pyc
