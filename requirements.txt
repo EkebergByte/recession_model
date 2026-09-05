@@ -1,0 +1,7 @@
+fredapi
+pandas
+scikit-learn
+joblib
+requests
+python-dotenv
+numpy
