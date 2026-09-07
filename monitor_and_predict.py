@@ -69,16 +69,13 @@ def check_and_run():
         if last_state.get(s_id) != last_up:
             changed_series.append((name, s_id, info.get("title")))
 
-    if not changed_series and "last_probabilities" in last_state:
-        print("☕ [FRED] Brak nowych danych od ostatniego sprawdzenia.")
-        return
-
-    updated_names = (
-        ", ".join([item[0] for item in changed_series])
-        if changed_series
-        else "Inicjalizacja systemu"
-    )
-    print(f"⚡ Wykryto nowe dane: {updated_names}")
+    # USUNIĘTO BLOKADĘ RETURN - teraz raport generuje się ZAWSZE:
+    if changed_series:
+        updated_names = ", ".join([item[0] for item in changed_series])
+        print(f"⚡ Wykryto nowe dane w FRED: {updated_names}")
+    else:
+        updated_names = "Brak nowych publikacji (raport kontrolny)"
+        print("☕ Brak nowych danych w FRED. Generuję pełny raport kontrolny...")
 
     # 2. Pobranie danych
     raw = {k: fred.get_series(v).dropna() for k, v in SERIES.items()}
@@ -90,16 +87,13 @@ def check_and_run():
     s_claims = raw["claims_4w"].resample("MS").last().dropna()
     s_permits = raw["permits"].resample("MS").last().dropna()
 
-    # 3. Wyliczanie cech na surowych seriach (BEZ PODWÓJNEGO SHIFT)
-    # Rynki finansowe i zasiłki (stan bieżący T)
+    # 3. Wyliczanie cech na surowych seriach
     yc_10y3m = s_gs10 - s_tb3m
     yc_delta6m = yc_10y3m - yc_10y3m.shift(6)
     yc_lag6m = yc_10y3m.shift(6)
     baa_lag6m = s_baa.shift(6)
     claims_yoy = s_claims.pct_change(12) * 100
 
-    # Makroekonomia: wyliczamy wskaźniki na ich własnych dostępnych datach
-    # s_unrate kończy się na T-1, s_permits na T-2. ffill() przeniesie je do T.
     sahm_rule = s_unrate.rolling(3).mean() - s_unrate.rolling(12).min()
     permits_yoy = s_permits.pct_change(12) * 100
 
@@ -130,18 +124,19 @@ def check_and_run():
 
     old_probs = last_state.get("last_probabilities", {})
 
-    # 5. Raport HTML
+    # 5. Raport HTML na Telegram
+    status_icon = "⚡" if changed_series else "☕"
     msg = f"📊 <b>RAPORT MAKROEKONOMICZNY USA (POINT-IN-TIME)</b>\n"
     msg += f"Stan danych na: <code>{latest_date}</code>\n"
-    msg += f"Zaktualizowano: <code>{html.escape(updated_names)}</code>\n\n"
-    msg += f"🏛️ <b>Szacowane Ryzyko Recesji (Nowcast):</b>\n"
+    msg += f"{status_icon} Status: <code>{html.escape(updated_names)}</code>\n\n"
+    msg += f"🛡️ <b>Szacowane Ryzyko Recesji (Nowcast):</b>\n"
 
     for h in [3, 6, 12]:
         p_new = new_probs[str(h)]
         p_old = old_probs.get(str(h), p_new)
         delta = p_new - p_old
         sign = f"+{delta:.2f}%" if delta > 0 else f"{delta:.2f}%"
-        delta_str = f" (Zmiana: {sign})" if p_old != p_new else ""
+        delta_str = f" (Zmiana: {sign})" if (p_old != p_new and changed_series) else ""
 
         if p_new < 15.0:
             ico = "🟢"
